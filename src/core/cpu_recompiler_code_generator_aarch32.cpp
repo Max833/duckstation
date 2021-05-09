@@ -1202,9 +1202,10 @@ void CodeGenerator::EmitLoadGuestRAMFastmem(const Value& address, RegSize size, 
   }
 
   m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12); // offset = addr & 0xfff
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
+  m_emit->bic(GetHostReg32(RARG1), GetHostReg32(RARG1), 0xFF);                                // ptr &= ~cycles
 
   switch (size)
   {
@@ -1248,10 +1249,12 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
     address_reg = address.host_reg;
   }
 
-  m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);     // page = addr >> 12
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12); // offset = addr & 0xfff
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
+  m_emit->and_(GetHostReg32(RSCRATCH), GetHostReg32(RARG1), 0xFF);                            // scratch = ptr & cycles
+  m_emit->bic(GetHostReg32(RARG1), GetHostReg32(RARG1), 0xFF);                                // ptr &= ~cycles
 
   m_register_cache.InhibitAllocation();
   bpi.host_pc = GetCurrentNearCodePointer();
@@ -1275,7 +1278,7 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
       break;
   }
 
-  EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromConstantU32(Bus::RAM_READ_TICKS));
+  EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromHostReg(&m_register_cache, RSCRATCH, RegSize_32));
 
   bpi.host_code_size = static_cast<u32>(
     static_cast<ptrdiff_t>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc)));
@@ -1401,7 +1404,7 @@ void CodeGenerator::EmitStoreGuestMemoryFastmem(const CodeBlockInstruction& cbi,
   // TODO: if this gets backpatched, these instructions are wasted
 
   m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
-  m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
+  m_emit->ubfx(GetHostReg32(RARG2), GetHostReg32(address_reg), 0, 12);
   m_emit->ldr(GetHostReg32(RARG1),
               a32::MemOperand(GetHostReg32(fastmem_base), GetHostReg32(RARG1), a32::LSL, 2)); // pointer load
 

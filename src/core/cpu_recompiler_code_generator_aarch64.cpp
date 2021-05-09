@@ -1369,6 +1369,7 @@ void CodeGenerator::EmitLoadGuestRAMFastmem(const Value& address, RegSize size, 
     m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
     m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
     m_emit->ldr(GetHostReg64(RARG1), a64::MemOperand(GetFastmemBasePtrReg(), GetHostReg32(RARG1), a64::LSL, 3));
+    m_emit->and_(GetHostReg64(RARG1), GetHostReg64(RARG1), ~static_cast<u64>(HOST_PAGE_OFFSET_MASK));
 
     switch (size)
     {
@@ -1435,12 +1436,16 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
         UnreachableCode();
         break;
     }
+
+    EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromConstantU32(Bus::RAM_READ_TICKS));
   }
   else
   {
     m_emit->lsr(GetHostReg32(RARG1), GetHostReg32(address_reg), 12);
     m_emit->and_(GetHostReg32(RARG2), GetHostReg32(address_reg), HOST_PAGE_OFFSET_MASK);
     m_emit->ldr(GetHostReg64(RARG1), a64::MemOperand(GetFastmemBasePtrReg(), GetHostReg32(RARG1), a64::LSL, 3));
+    m_emit->and_(GetHostReg64(RARG3), GetHostReg64(RARG1), static_cast<u64>(HOST_PAGE_OFFSET_MASK));
+    m_emit->and_(GetHostReg64(RARG1), GetHostReg64(RARG1), ~static_cast<u64>(HOST_PAGE_OFFSET_MASK));
 
     bpi.host_pc = GetCurrentNearCodePointer();
 
@@ -1462,9 +1467,9 @@ void CodeGenerator::EmitLoadGuestMemoryFastmem(const CodeBlockInstruction& cbi, 
         UnreachableCode();
         break;
     }
-  }
 
-  EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromConstantU32(Bus::RAM_READ_TICKS));
+    EmitAddCPUStructField(offsetof(State, pending_ticks), Value::FromHostReg(&m_register_cache, RARG3, RegSize_32));
+  }
 
   bpi.host_code_size = static_cast<u32>(
     static_cast<ptrdiff_t>(static_cast<u8*>(GetCurrentNearCodePointer()) - static_cast<u8*>(bpi.host_pc)));
